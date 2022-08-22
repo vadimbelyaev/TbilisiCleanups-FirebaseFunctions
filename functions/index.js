@@ -7,6 +7,10 @@ exports.sendPushToAuthorWhenReportStatusChanges = functions.firestore
     .document("reports/{docId}")
     .onUpdate((change, context) => {
       const newValue = change.after.data();
+      functions.logger.log(
+          "newValue = ",
+          newValue
+      );
       const previousValue = change.before.data();
       const newStatus = newValue["status"];
       const oldStatus = previousValue["status"];
@@ -19,14 +23,30 @@ exports.sendPushToAuthorWhenReportStatusChanges = functions.firestore
             " to ",
             newStatus
         );
-        const userProviderId = newValue["userProviderId"];
-        const userId = newValue["userId"];
+        const userProviderId = newValue["user_provider_id"];
+        const userId = newValue["user_id"];
 
-        return admin.database()
-            .ref(`/userProviders/${userProviderId}/users/${userId}`)
-            .once("value")
+        functions.logger.log(
+            "userProviderId = ",
+            userProviderId,
+            ", userId = ",
+            userId
+        );
+
+        return admin.firestore()
+            .doc(`/user_providers/${userProviderId}/users/${userId}`)
+            .get()
             .then(function(snapshot) {
-              const tokens = snapshot["tokens"];
+              functions.logger.log(
+                  "Received snapshot = ",
+                  snapshot
+              );
+              const data = snapshot.data();
+              functions.logger.log(
+                  "Fetched tokens data: ",
+                  data
+              );
+              const tokens = data["fcm_tokens"];
               return new Promise((resolve, reject) => resolve(tokens));
             })
             .then(function(tokens) {
@@ -37,9 +57,10 @@ exports.sendPushToAuthorWhenReportStatusChanges = functions.firestore
                     `changed to ${newStatus}.`,
                   // icon: someURL
                 },
+                tokens: tokens,
               };
 
-              return admin.messaging().sendToDevice(tokens, payload);
+              return admin.messaging().sendMulticast(payload);
             });
       }
     });
