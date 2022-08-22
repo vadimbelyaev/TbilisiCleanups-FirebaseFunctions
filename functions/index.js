@@ -5,12 +5,8 @@ admin.initializeApp();
 
 exports.sendPushToAuthorWhenReportStatusChanges = functions.firestore
     .document("reports/{docId}")
-    .onUpdate((change, context) => {
+    .onUpdate(async (change, context) => {
       const newValue = change.after.data();
-      functions.logger.log(
-          "newValue = ",
-          newValue
-      );
       const previousValue = change.before.data();
       const newStatus = newValue["status"];
       const oldStatus = previousValue["status"];
@@ -21,7 +17,7 @@ exports.sendPushToAuthorWhenReportStatusChanges = functions.firestore
             " has changed from ",
             oldStatus,
             " to ",
-            newStatus
+            newStatus,
         );
         const userProviderId = newValue["user_provider_id"];
         const userId = newValue["user_id"];
@@ -30,37 +26,37 @@ exports.sendPushToAuthorWhenReportStatusChanges = functions.firestore
             "userProviderId = ",
             userProviderId,
             ", userId = ",
-            userId
+            userId,
         );
 
-        return admin.firestore()
+        const preferencesSnapshot = await admin.firestore()
             .doc(`/user_providers/${userProviderId}/users/${userId}`)
-            .get()
-            .then(function(snapshot) {
-              functions.logger.log(
-                  "Received snapshot = ",
-                  snapshot
-              );
-              const data = snapshot.data();
-              functions.logger.log(
-                  "Fetched tokens data: ",
-                  data
-              );
-              const tokens = data["fcm_tokens"];
-              return new Promise((resolve, reject) => resolve(tokens));
-            })
-            .then(function(tokens) {
-              const payload = {
-                notification: {
-                  title: newValue["description"],
-                  body: "The status of your report has " +
-                    `changed to ${newStatus}.`,
-                  // icon: someURL
-                },
-                tokens: tokens,
-              };
+            .get();
 
-              return admin.messaging().sendMulticast(payload);
-            });
+        const data = preferencesSnapshot.data();
+        functions.logger.log(
+            "Fetched user preferences: ",
+            data,
+        );
+        const notificationsEnabled = data[
+            "report_status_change_notifications_enabled"
+        ];
+        if (!notificationsEnabled) {
+          functions.logger.log(
+              "User has notifications disabled, not sending.",
+          );
+          return 0;
+        }
+        const tokens = data["fcm_tokens"];
+        const payload = {
+          notification: {
+            title: newValue["description"],
+            body: "The status of your report has " +
+              `changed to ${newStatus}.`,
+            // icon: someURL
+          },
+          tokens: tokens,
+        };
+        return admin.messaging().sendMulticast(payload);
       }
     });
