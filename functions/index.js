@@ -56,6 +56,9 @@ exports.sendPushToAuthorWhenReportStatusChanges = functions.firestore
             // icon: someURL
           },
           tokens: tokens,
+          data: {
+            report_id: newValue["id"],
+          },
         };
         return admin.messaging().sendMulticast(payload);
       }
